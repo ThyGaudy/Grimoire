@@ -514,6 +514,15 @@ body{
 .yn-btn.right{background:var(--c-res);border-color:var(--c-res);color:#fff}
 .yn-btn.wrong{opacity:.45;text-decoration:line-through}
 .restore-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px 16px;border:2px solid var(--gold);border-radius:12px;background:var(--paper)}
+.save-badge{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;border:1.5px solid color-mix(in srgb,var(--c-res) 45%,transparent);border-radius:10px;background:color-mix(in srgb,var(--c-res) 7%,transparent);color:var(--ink);font:inherit;cursor:pointer}
+.save-badge .sb-seal{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--c-res);color:var(--paper);font-weight:700;font-size:.9rem}
+.save-badge .sb-txt{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.save-badge b{font-size:.92rem}
+.save-badge small{font-size:.8rem;color:var(--ink-soft)}
+.save-badge.wait{border-color:color-mix(in srgb,var(--gold) 55%,transparent);background:color-mix(in srgb,var(--gold) 8%,transparent)}
+.save-badge.wait .sb-seal{background:var(--gold)}
+.save-badge.old{border-color:color-mix(in srgb,#c0392b 50%,transparent);background:color-mix(in srgb,#c0392b 7%,transparent)}
+.save-badge.old .sb-seal{background:#c0392b}
 .nudge{padding:10px 14px;border-radius:10px;border:1.5px dashed var(--gold);color:var(--ink-soft);font-size:.92rem;background:color-mix(in srgb,var(--gold) 8%,transparent)}
 .carnet{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid var(--edge);border-radius:10px;background:var(--card)}
 .days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
@@ -668,6 +677,7 @@ body{
       <div class="row" id="restoreHomeConfirm" hidden><button class="btn btn-ink btn-sm" id="restoreHomeYes" type="button">Oui, récupérer ma progression</button><button class="btn btn-ghost btn-sm" id="restoreHomeNo" type="button">Annuler</button></div>
     </div>
     <p class="nudge" id="backupNudge" hidden>Ça fait un moment&nbsp;: demande à tes parents de sauvegarder ta progression (Coffre aux trésors → Espace parent).</p>
+    <button class="save-badge" id="saveBadge" type="button" hidden><span class="sb-seal" aria-hidden="true">✓</span><span class="sb-txt"><b id="saveBadgeTitle"></b><small id="saveBadgeSub"></small></span></button>
     <div class="now-card">
       <span class="eyebrow">En classe en ce moment</span>
       <b id="nowName">Priorités opératoires</b>
@@ -2195,6 +2205,7 @@ function renderToday(){
   const lb=store.get("lastBackup",null);
   $("backupNudge").hidden = !!window.__autoBackupOn || !(earned()>=150 && (!lb || (Date.now()-new Date(lb).getTime())>7*864e5));
   $("restoreCard").hidden = !(earned()===0 && !store.get("log",[]).length);
+  if(typeof renderSaveBadge==="function") renderSaveBadge();
 }
 $("nowBtn").addEventListener("click",()=>openChapter(currentChapter()));
 $("pathBtn").addEventListener("click",()=>show("v-maths"));
@@ -3302,7 +3313,38 @@ function autoBackup(){
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
     localStorage.setItem("grimoire.lastBackup", JSON.stringify(new Date().toISOString()));
   }catch(e){}
+  renderSaveBadge();
 }
+/* pastille d'accueil : montre la dernière sauvegarde, et un toucher sauvegarde tout de suite (sans code) */
+function renderSaveBadge(){
+  const el=$("saveBadge"); if(!el) return;
+  if(!window.__autoBackupOn || !$("restoreCard").hidden){ el.hidden=true; return; }
+  el.hidden=false;
+  const lb=store.get("lastBackup",null), seal=el.querySelector(".sb-seal");
+  if(!lb){
+    el.className="save-badge wait"; seal.textContent="…";
+    $("saveBadgeTitle").textContent = earned()>0 ? "Pas encore de sauvegarde" : "Sauvegarde : pas encore";
+    $("saveBadgeSub").textContent = earned()>0 ? "Touche ici pour sauvegarder maintenant" : "Elle se fera toute seule après ta première séance";
+    return;
+  }
+  const d=new Date(lb), days=Math.floor((Date.now()-d.getTime())/864e5);
+  const when = days<1 ? "aujourd'hui" : days===1 ? "hier" : `le ${d.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}`;
+  el.className = "save-badge" + (days>=7 ? " old" : ""); seal.textContent = days>=7 ? "!" : "✓";
+  $("saveBadgeTitle").textContent = `Sauvegardé ${when}`;
+  $("saveBadgeSub").textContent = "Dans Téléchargements · touche pour sauvegarder maintenant";
+}
+$("saveBadge").addEventListener("click",()=>{
+  if(earned()<=0) return;
+  try{
+    const blob=new Blob([backupText()],{type:"text/plain"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=backupName();
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    localStorage.setItem("grimoire.lastBackup", JSON.stringify(new Date().toISOString()));
+  }catch(e){}
+  renderSaveBadge(); renderSaveInfo();
+  const s=$("saveBadgeSub"); s.textContent="C'est fait ! Le fichier est dans Téléchargements.";
+});
+renderSaveBadge();
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 $("saveShare").addEventListener("click",async()=>{
   const file=new File([backupText()], backupName(), {type:"text/plain"});
