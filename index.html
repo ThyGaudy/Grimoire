@@ -513,6 +513,8 @@ body{
 .yn-btn{min-width:7rem;min-height:60px;font-size:1.3rem;font-weight:700;background:var(--card)}
 .yn-btn.right{background:var(--c-res);border-color:var(--c-res);color:#fff}
 .yn-btn.wrong{opacity:.45;text-decoration:line-through}
+.restore-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px 16px;border:2px solid var(--gold);border-radius:12px;background:var(--paper)}
+.nudge{padding:10px 14px;border-radius:10px;border:1.5px dashed var(--gold);color:var(--ink-soft);font-size:.92rem;background:color-mix(in srgb,var(--gold) 8%,transparent)}
 .carnet{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid var(--edge);border-radius:10px;background:var(--card)}
 .days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
 .day{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border-radius:8px;background:color-mix(in srgb,var(--ink) 7%,transparent);font-size:.8rem;color:var(--ink-soft);min-height:44px}
@@ -658,6 +660,14 @@ body{
       <span class="rc-sub" id="ritualSub">8 questions mélangées sur ce que tu as déjà vu en classe</span>
       <span class="rc-go" id="ritualGo">Commencer ›</span>
     </button>
+    <div class="restore-card" id="restoreCard" hidden>
+      <b>Tes étoiles ont disparu&nbsp;?</b>
+      <p class="sub">Si tu avais déjà joué sur ce téléphone, ta sauvegarde est dans tes <b>Téléchargements</b> (un fichier «&nbsp;grimoire-sauvegarde&nbsp;»). Choisis le plus récent.</p>
+      <label class="pick">Retrouver ma sauvegarde<input type="file" id="restoreHome" accept=".txt,.json,text/plain,application/json"></label>
+      <p class="err" id="restoreHomeMsg" hidden></p>
+      <div class="row" id="restoreHomeConfirm" hidden><button class="btn btn-ink btn-sm" id="restoreHomeYes" type="button">Oui, récupérer ma progression</button><button class="btn btn-ghost btn-sm" id="restoreHomeNo" type="button">Annuler</button></div>
+    </div>
+    <p class="nudge" id="backupNudge" hidden>Ça fait un moment&nbsp;: demande à tes parents de sauvegarder ta progression (Coffre aux trésors → Espace parent).</p>
     <div class="now-card">
       <span class="eyebrow">En classe en ce moment</span>
       <b id="nowName">Priorités opératoires</b>
@@ -897,6 +907,20 @@ body{
     </div>
     <div class="parent" id="parentPanel" hidden>
       <div class="carnet" id="carnet"></div>
+      <div class="carnet save-box">
+        <p class="shop-title">Sauvegarde de la progression</p>
+        <p class="sub" id="saveInfo">Aucune sauvegarde pour l'instant.</p>
+        <p class="sub">Une sauvegarde est faite <b>automatiquement tous les 3 jours</b>, à la fin d'une séance, dans les Téléchargements du téléphone. Si les données sont effacées, l'accueil propose de la récupérer, sans code parent. Tu peux aussi en faire une maintenant, ou te l'envoyer pour plus de sécurité.</p>
+        <div class="row">
+          <button class="btn btn-ink btn-sm" id="saveShare" type="button">Envoyer la sauvegarde</button>
+          <button class="btn btn-ghost btn-sm" id="saveFile" type="button">Enregistrer un fichier</button>
+        </div>
+        <p class="shop-title" style="margin-top:6px">Restaurer</p>
+        <p class="sub">Choisis le fichier de sauvegarde reçu. La progression actuelle de cet appareil sera remplacée.</p>
+        <div class="row"><label class="pick">Choisir le fichier de sauvegarde<input type="file" id="restoreFile" accept=".txt,.json,text/plain,application/json"></label></div>
+        <p class="err" id="saveMsg" hidden></p>
+        <div class="row" id="restoreConfirm" hidden><button class="btn btn-sm" id="restoreYes" type="button" style="background:var(--c-mul);border-color:var(--c-mul);color:#fff">Oui, remplacer par cette sauvegarde</button><button class="btn btn-ghost btn-sm" id="restoreNo" type="button">Annuler</button></div>
+      </div>
       <p class="sync" id="syncNote"></p>
       <p class="shop-title">Progression de la classe</p>
       <p class="sub">Indiquez où en est la classe. Le rituel du jour ne pose des questions que sur les chapitres vus ou en cours. Les flèches changent l'ordre du chemin pour suivre celui du professeur.</p>
@@ -1663,6 +1687,7 @@ $("resetProgress").addEventListener("click",()=>{
 });
 function renderParent(){
   renderImgList();
+  renderSaveInfo();
   renderCarnet();
   if(typeof renderProg==="function") renderProg();
   const ul=$("parentList"); ul.innerHTML="";
@@ -2167,6 +2192,9 @@ function renderToday(){
   $("ritualGo").textContent = done ? "M'entraîner encore ›" : "Commencer ›";
   const c=currentChapter();
   $("nowName").textContent = c.name;
+  const lb=store.get("lastBackup",null);
+  $("backupNudge").hidden = !!window.__autoBackupOn || !(earned()>=150 && (!lb || (Date.now()-new Date(lb).getTime())>7*864e5));
+  $("restoreCard").hidden = !(earned()===0 && !store.get("log",[]).length);
 }
 $("nowBtn").addEventListener("click",()=>openChapter(currentChapter()));
 $("pathBtn").addEventListener("click",()=>show("v-maths"));
@@ -3036,6 +3064,7 @@ document.addEventListener("keydown",e=>{
 
 /* ================= Carnet des parents ================= */
 function logActivity(label, ok, total){
+  setTimeout(()=>{ if(typeof autoBackup==="function") autoBackup(); },300);
   const log=store.get("log",[]);
   log.push({d:todayStr(), l:label, ok, n:total});
   while(log.length>200) log.shift();
@@ -3233,6 +3262,110 @@ function flyStar(el,label){
   let h=""; for(let i=0;i<12;i++){ h+=`<span class="mote" style="left:${(Math.random()*100).toFixed(1)}%;--dx:${Math.round(Math.random()*60-30)}px;animation-duration:${(7+Math.random()*7).toFixed(1)}s;animation-delay:-${(Math.random()*12).toFixed(1)}s;transform:scale(${(.6+Math.random()*.8).toFixed(2)})"></span>`; }
   m.innerHTML=h;
 })();
+
+/* ================= Sauvegarde et restauration ================= */
+function collectBackup(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith("grimoire.") && k!=="grimoire.lastBackup") data[k.slice(9)]=localStorage.getItem(k); }
+  return {app:"grimoire", v:1, date:new Date().toISOString(), data};
+}
+const backupText = () => "GRIMOIRE1:"+btoa(unescape(encodeURIComponent(JSON.stringify(collectBackup()))));
+const backupName = () => `grimoire-sauvegarde-${todayStr()}.txt`;
+function markBackup(how){
+  try{ localStorage.setItem("grimoire.lastBackup", JSON.stringify(new Date().toISOString())); }catch(e){}
+  const m=$("saveMsg"); m.style.color="var(--c-res)"; m.textContent=how; m.hidden=false;
+  renderSaveInfo(); renderToday();
+}
+function renderSaveInfo(){
+  const el=$("saveInfo"); if(!el) return;
+  const lb=store.get("lastBackup",null);
+  if(!lb){ el.textContent="Aucune sauvegarde pour l'instant."; return; }
+  const d=new Date(lb), days=Math.floor((Date.now()-d.getTime())/864e5);
+  el.textContent=`Dernière sauvegarde : ${d.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}${days>=1?` (il y a ${days} jour${days>1?"s":""})`:" (aujourd'hui)"}.`;
+}
+function downloadBackup(){
+  const blob=new Blob([backupText()],{type:"text/plain"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=backupName();
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  markBackup("Fichier enregistré dans les téléchargements du téléphone. Pense à te l'envoyer aussi, au cas où.");
+}
+$("saveFile").addEventListener("click",downloadBackup);
+/* sauvegarde automatique : tous les 3 jours, à la fin d'une séance, dans les Téléchargements (hors aperçu Claude, où les fichiers sont bloqués) */
+window.__autoBackupOn = !window.claude;
+function autoBackup(){
+  if(!window.__autoBackupOn || earned()<=0) return;
+  const last=store.get("lastBackup",null);
+  if(last && Date.now()-new Date(last).getTime() < 3*864e5) return;
+  try{
+    const blob=new Blob([backupText()],{type:"text/plain"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=backupName();
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    localStorage.setItem("grimoire.lastBackup", JSON.stringify(new Date().toISOString()));
+  }catch(e){}
+}
+if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+$("saveShare").addEventListener("click",async()=>{
+  const file=new File([backupText()], backupName(), {type:"text/plain"});
+  try{
+    if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:"Sauvegarde du Grimoire"}); markBackup("Sauvegarde envoyée. Garde bien ce fichier."); return; }
+  }catch(e){ if(e && e.name==="AbortError") return; }
+  downloadBackup();
+});
+let pendingRestore=null;
+function parseBackup(text){
+  const t=String(text).trim(); let obj;
+  if(t.startsWith("GRIMOIRE1:")) obj=JSON.parse(decodeURIComponent(escape(atob(t.slice(10)))));
+  else obj=JSON.parse(t);
+  if(!obj || obj.app!=="grimoire" || !obj.data) throw new Error("format");
+  return obj;
+}
+function applyRestore(obj){
+  const keys=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith("grimoire.")) keys.push(k); }
+  keys.forEach(k=>localStorage.removeItem(k));
+  Object.entries(obj.data).forEach(([k,v])=>localStorage.setItem("grimoire."+k, v));
+  localStorage.setItem("grimoire.lastBackup", JSON.stringify(obj.date));
+  location.reload();
+}
+const describeBackup = obj => `Sauvegarde du ${new Date(obj.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})} : ${Number(JSON.parse(obj.data.xp||"0"))||0} étoiles gagnées.`;
+let homeRestore=null;
+$("restoreHome").addEventListener("change",e=>{
+  const f=e.target.files && e.target.files[0]; e.target.value=""; if(!f) return;
+  const m=$("restoreHomeMsg"); const rd=new FileReader();
+  rd.onload=()=>{ try{ homeRestore=parseBackup(rd.result); m.style.color=""; m.textContent=describeBackup(homeRestore)+" On la récupère ?"; m.hidden=false; $("restoreHomeConfirm").hidden=false; }
+    catch(err){ m.textContent="Ce fichier n'est pas une sauvegarde du Grimoire. Cherche un fichier qui commence par « grimoire-sauvegarde »."; m.hidden=false; $("restoreHomeConfirm").hidden=true; } };
+  rd.readAsText(f);
+});
+$("restoreHomeNo").addEventListener("click",()=>{ homeRestore=null; $("restoreHomeConfirm").hidden=true; $("restoreHomeMsg").hidden=true; });
+$("restoreHomeYes").addEventListener("click",()=>{ if(homeRestore){ try{ applyRestore(homeRestore); }catch(err){ $("restoreHomeMsg").textContent="La récupération n'a pas pu se faire (mémoire du téléphone pleine ?)."; } } });
+$("restoreFile").addEventListener("change",e=>{
+  const f=e.target.files && e.target.files[0]; e.target.value=""; if(!f) return;
+  const m=$("saveMsg"); m.style.color="";
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      let t=String(rd.result).trim(); let obj;
+      if(t.startsWith("GRIMOIRE1:")) obj=JSON.parse(decodeURIComponent(escape(atob(t.slice(10)))));
+      else obj=JSON.parse(t);
+      if(!obj || obj.app!=="grimoire" || !obj.data) throw new Error("format");
+      pendingRestore=obj;
+      const xp=Number(JSON.parse(obj.data.xp||"0"))||0;
+      m.textContent=`Sauvegarde du ${new Date(obj.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})} : ${xp} étoiles gagnées. Remplacer la progression de cet appareil ?`;
+      m.hidden=false; $("restoreConfirm").hidden=false;
+    }catch(err){ m.textContent="Ce fichier n'est pas une sauvegarde du Grimoire."; m.hidden=false; $("restoreConfirm").hidden=true; }
+  };
+  rd.readAsText(f);
+});
+$("restoreNo").addEventListener("click",()=>{ pendingRestore=null; $("restoreConfirm").hidden=true; $("saveMsg").hidden=true; });
+$("restoreYes").addEventListener("click",()=>{
+  if(!pendingRestore) return;
+  try{
+    const keys=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith("grimoire.")) keys.push(k); }
+    keys.forEach(k=>localStorage.removeItem(k));
+    Object.entries(pendingRestore.data).forEach(([k,v])=>localStorage.setItem("grimoire."+k, v));
+    localStorage.setItem("grimoire.lastBackup", JSON.stringify(pendingRestore.date));
+    location.reload();
+  }catch(err){ const m=$("saveMsg"); m.textContent="La restauration n'a pas pu se faire (mémoire du téléphone pleine ?)."; m.hidden=false; }
+});
 
 $("gName").value = store.get("name","");
 applyLook();
